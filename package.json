@@ -1,0 +1,59 @@
+{
+  "name": "dependabot-automerge-action",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Automagically approve dependabot pr",
+  "author": "Mattia Dapino <mattia.dapino@hey.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mitto98/dependabot-automerge-action.git"
+  },
+  "keywords": [
+    "github",
+    "github actions",
+    "nodejs",
+    "typescript",
+    "dependencies",
+    "dependabot",
+    "security"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "build:dev": "tsc",
+    "build": "ncc build src/index.ts -C -m -s --license licenses.txt",
+    "test": "jest",
+    "semantic-release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@types/jest": "^27.0.3",
+    "@types/semver": "^7.3.4",
+    "@vercel/ncc": "^0.33.0",
+    "jest": "^27.4.5",
+    "semantic-release": "^18.0.1",
+    "ts-jest": "^27.1.1",
+    "typescript": "^4.5.4"
+  },
+  "dependencies": {
+    "@actions/core": "^1.6.0",
+    "@actions/github": "^4.0.0",
+    "semver": "^7.3.2"
+  },
+  "jest": {
+    "roots": [
+      "<rootDir>/src/"
+    ],
+    "transform": {
+      "^.+\\.tsx?$": "ts-jest"
+    },
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx"
+    ],
+    "automock": false
+  }
+}

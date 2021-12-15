@@ -1,0 +1,112 @@
+name: 'Dependabot automerge action'
+description: 'Automagically approve dependabot pr'
+author: 'Mattia Dapino <mattia.dapino@hey.com>'
+inputs:
+  token:
+    required: true
+    description: 'GitHub token'
+  labels-major:
+    required: false
+    description: 'Labels for major releases'
+  auto-label:
+    required: false
+    description: 'Auto label all releases'
+  merge:
+    required: false
+    description: 'Merge all releases'
+  approve:
+    required: false
+    description: 'Approve all releases'
+  labels-premajor:
+    required: false
+    description: 'Labels for premajor releases'
+  labels-minor:
+    required: false
+    description: 'Labels for minor releases'
+  labels-preminor:
+    required: false
+    description: 'Labels for preminor releases'
+  labels-patch:
+    required: false
+    description: 'Labels for patch releases'
+  labels-prepatch:
+    required: false
+    description: 'Labels for prepatch releases'
+  labels-prerelease:
+    required: false
+    description: 'Labels for prerelease releases'
+  auto-label-major:
+    required: false
+    description: 'Auto label major releases'
+  merge-major:
+    required: false
+    description: 'Merge minor releases'
+  approve-major:
+    required: false
+    description: 'Approve major releases'
+  auto-label-premajor:
+    required: false
+    description: 'Auto lavel premajor release'
+  merge-premajor:
+    required: false
+    description: 'Merge premajor releases'
+  approve-premajor:
+    required: false
+    description: 'Auto label premajor releases'
+  auto-label-minor:
+    required: false
+    description: 'Auto label minor releases'
+  merge-minor:
+    required: false
+    description: 'Merge minor releases'
+  approve-minor:
+    required: false
+    description: 'Approve minor releases'
+  auto-label-preminor:
+    required: false
+    description: 'Auto lavel preminor releases'
+  merge-preminor:
+    required: false
+    description: 'Merge preminor releases'
+  approve-preminor:
+    required: false
+    description: 'Approve preminor releases'
+  auto-label-patch:
+    required: false
+    description: 'Auto label patch releases'
+  merge-patch:
+    required: false
+    description: 'Merge patch releases'
+  approve-patch:
+    required: false
+    description: 'Approve patch releases'
+  auto-label-prepatch:
+    required: false
+    description: 'Auto lavel prepatch releases'
+  merge-prepatch:
+    required: false
+    description: 'Merge prepatch releases'
+  approve-prepatch:
+    required: false
+    description: 'Approve prepatch releases'
+  auto-label-prerelease:
+    required: false
+    description: 'Auto label prerelease releases'
+  merge-prerelease:
+    required: false
+    description: 'Merge preprelease releases'
+  approve-prerelease:
+    required: false
+    description: 'Approve prerelease releases'
+  ignore-status-checks:
+    required: false
+    description: 'Ignore status checks'
+  merge-commit:
+    required: false
+    description: 'Merge commits'
+runs:
+  using: 'node16'
+  main: 'dist/index.js'
+branding:
+  icon: 'git-merge'
+  color: 'green'
