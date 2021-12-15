@@ -29,7 +29,6 @@ jobs:
         with:
           name: build-artifact
           path: dist
-      - run: ls
       - uses: actions/setup-node@v2
         with:
           node-version: 16
