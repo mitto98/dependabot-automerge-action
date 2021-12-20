@@ -30,7 +30,7 @@
     "@semantic-release/git": "^10.0.1",
     "@types/jest": "^27.0.3",
     "@types/semver": "^7.3.9",
-    "@vercel/ncc": "^0.33.0",
+    "@vercel/ncc": "^0.33.1",
     "jest": "^27.4.5",
     "semantic-release": "^18.0.1",
     "ts-jest": "^27.1.2",
