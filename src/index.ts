@@ -64,7 +64,7 @@ export const run = async () => {
 
   const pullRequests = await octokit.pulls.list({ owner, repo, state: 'open' });
   const dependabotPRs = pullRequests.data.filter((pr) =>
-    pr.user.login.includes('dependabot')
+    pr.user.login === 'dependabot[bot]'
   );
   console.log('Found dependabot PRs', dependabotPRs.length);
   for await (const pr of dependabotPRs) {
