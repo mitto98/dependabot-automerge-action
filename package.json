@@ -1,6 +1,6 @@
 {
   "name": "dependabot-automerge-action",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Automagically approve dependabot pr",
   "author": "Mattia Dapino <mattia.dapino@hey.com>",
