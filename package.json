@@ -39,7 +39,7 @@
   "dependencies": {
     "@actions/core": "^1.6.0",
     "@actions/github": "^4.0.0",
-    "semver": "^7.3.6"
+    "semver": "^7.3.7"
   },
   "jest": {
     "roots": [
