@@ -1,202 +1,209 @@
 import { getInput, setFailed } from '@actions/core';
 import { getOctokit } from '@actions/github';
 import { diff, valid } from 'semver';
-import { wait } from './utils';
+import {
+  ChecksListForRefResponseData,
+  ReposListCommitStatusesForRefResponseData,
+} from '@octokit/types';
+import {
+  getAllowLeap,
+  getFromVersionFromPR,
+  getToVersionFromPR,
+  wait,
+} from './utils';
+
+const versions = ['patch', 'minor', 'major'];
 
 const token =
   getInput('token') || process.env.GH_PAT || process.env.GITHUB_TOKEN;
-
 if (!token) throw new Error('GitHub token not found');
 
+const { allowLeap: mergeAllowLeap, allowPrerelease: mergePrerelease } =
+  getAllowLeap('merge', versions);
+
+const { allowLeap: approveAllowLeap, allowPrerelease: approvePrerelease } =
+  getAllowLeap('approve', versions);
+
 const octokit = getOctokit(token);
+
 const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
 const ignoreStatusChecks = getInput('ignore-status-checks');
 
-export const run = async () => {
-  const addLabels = async (prNumber: number, labels?: string) => {
-    console.log('addLabels', prNumber, labels);
-    if (labels) {
-      const addLabels = labels.split(',').map((i) => i.trim());
-      await octokit.issues.addLabels({
-        owner,
-        repo,
-        issue_number: prNumber,
-        labels: addLabels,
-      });
-    }
-  };
-  const autoMerge = async (
-    prNumber: number,
-    prTitle: string,
-    tryNumber = 1
-  ) => {
-    if (tryNumber > 10) return;
-    console.log('autoMerge', prNumber, tryNumber);
-    try {
-      await octokit.pulls.merge({
-        owner,
-        repo,
-        pull_number: prNumber,
-        commit_title: (
-          getInput('merge-commit') ||
-          `:twisted_rightwards_arrows: Merge #$PR_NUMBER ($PR_TITLE)`
-        )
-          .replace('$PR_NUMBER', prNumber.toString())
-          .replace('$PR_TITLE', prTitle),
-      });
-    } catch (error) {
-      console.log(error);
-      await wait(tryNumber * 1000);
-      await autoMerge(prNumber, prTitle, tryNumber + 1);
-    }
-  };
-  const autoApprove = async (prNumber: number) => {
-    console.log('autoApprove', prNumber);
-    try {
-      await octokit.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        event: 'APPROVE',
-      });
-    } catch (error) {}
-  };
+function shouldProcess(
+  versionLeap: string,
+  actualVersionLeap: string,
+  allowPrerelease: boolean
+) {
+  const treatedLevel = allowPrerelease
+    ? actualVersionLeap.replace('pre', '')
+    : actualVersionLeap;
+  if (versionLeap === 'true' && versions.includes(actualVersionLeap))
+    return true;
+  // If prerelease is not enabled it will be -1, so the statement will be falsy
+  return versions.indexOf(versionLeap) >= versions.indexOf(treatedLevel);
+}
 
+async function addLabels(prNumber: number, labels: string) {
+  console.log('addLabels', prNumber, labels);
+  const addLabels = labels.split(',').map((i) => i.trim());
+  await octokit.issues.addLabels({
+    owner,
+    repo,
+    issue_number: prNumber,
+    labels: addLabels,
+  });
+}
+
+async function doMerge(prNumber: number, prTitle: string, tryNumber = 1) {
+  if (tryNumber > 10) return;
+  console.log('autoMerge', prNumber, tryNumber);
+  try {
+    await octokit.pulls.merge({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_title: (
+        getInput('merge-commit') ||
+        `:twisted_rightwards_arrows: Merge #$PR_NUMBER ($PR_TITLE)`
+      )
+        .replace('$PR_NUMBER', prNumber.toString())
+        .replace('$PR_TITLE', prTitle),
+    });
+  } catch (error) {
+    console.log(error);
+    await wait(tryNumber * 1000);
+    await doMerge(prNumber, prTitle, tryNumber + 1);
+  }
+}
+
+async function doApprove(prNumber: number) {
+  // TODO: sometimes the request fails for no reason, retry it
+  try {
+    await octokit.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      event: 'APPROVE',
+    });
+  } catch (error) {}
+}
+
+interface DependabotPR {
+  number: number;
+  title: string;
+  checkRuns: ChecksListForRefResponseData['check_runs'];
+  uniqueStatuses: ReposListCommitStatusesForRefResponseData;
+  first: string | null;
+  last: string | null;
+  version: string | null;
+}
+
+async function getDependabotPRs(): Promise<DependabotPR[]> {
   const pullRequests = await octokit.pulls.list({ owner, repo, state: 'open' });
-  const dependabotPRs = pullRequests.data.filter((pr) =>
-    pr.user.login === 'dependabot[bot]'
+  const dependabotPRs = pullRequests.data.filter(
+    (pr) => pr.user.login === 'dependabot[bot]'
   );
-  console.log('Found dependabot PRs', dependabotPRs.length);
-  for await (const pr of dependabotPRs) {
-    console.log('Starting PR', pr.number);
-    const lastCommitHash = pr._links.statuses.href.split('/').pop() || '';
-    const checkRuns = await octokit.checks.listForRef({
-      owner,
-      repo,
-      ref: lastCommitHash,
-    });
 
-    const allChecksHaveSucceeded = checkRuns.data.check_runs.every(
-      (run) => run.conclusion === 'success' || run.conclusion === 'skipped'
-    );
-    if (!allChecksHaveSucceeded && !ignoreStatusChecks) {
-      console.log('All check runs are not success', checkRuns.data);
-      continue;
-    }
+  return await Promise.all(
+    dependabotPRs.map(async (pr) => {
+      const lastCommitHash = pr._links.statuses.href.split('/').pop() || '';
+      const params = {
+        owner,
+        repo,
+        ref: lastCommitHash,
+      };
 
-    const statuses = await octokit.repos.listCommitStatusesForRef({
-      owner,
-      repo,
-      ref: lastCommitHash,
-    });
-    const uniqueStatuses = statuses.data.filter(
-      (item, index, self) =>
-        self.map((i) => i.context).indexOf(item.context) === index
-    );
-    const allStatusesHaveSucceeded = uniqueStatuses.every(
-      (run) => run.state === 'success'
-    );
-    if (!allStatusesHaveSucceeded && !ignoreStatusChecks) {
-      console.log('All statuses are not success', uniqueStatuses);
-      continue;
-    }
+      const checkRuns = await octokit.checks.listForRef(params);
+      const statuses = await octokit.repos.listCommitStatusesForRef(params);
+      const uniqueStatuses = statuses.data.filter(
+        (item, index, self) =>
+          self.map((i) => i.context).indexOf(item.context) === index
+      );
 
-    console.log(
-      'All status checks',
-      allChecksHaveSucceeded,
-      allStatusesHaveSucceeded
-    );
-
-    const commits = await octokit.pulls.listCommits({
-      owner,
-      repo,
-      pull_number: pr.number,
-    });
-    let version: string | null = '';
-    commits.data.forEach((commit) => {
+      let version: string | null = '';
       let first = '';
       let last = '';
-      console.log(pr.title);
       try {
-        first = pr.title
-          .split('from ')[1]
-          .split(' ')[0]
-          .split('\n')[0]
-          .substr(0, 8)
-          .trim();
-        last = pr.title
-          .split(' to ')[1]
-          .split(' ')[0]
-          .split('\n')[0]
-          .substr(0, 8)
-          .trim();
-        console.log('From version', first, valid(first));
-        console.log('To version', last, valid(last));
+        first = getFromVersionFromPR(pr.title);
+        last = getToVersionFromPR(pr.title);
         if (first && last) version = diff(first, last);
       } catch (error) {}
-    });
-    console.log('Diff version is', version);
-    if (version === 'major') {
-      await addLabels(pr.number, getInput('labels-major'));
-      if (getInput('auto-label') || getInput('auto-label-major'))
-        await addLabels(pr.number, 'major');
-      if (getInput('merge') || getInput('merge-major'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-major'))
-        autoApprove(pr.number);
-    } else if (version === 'premajor') {
-      await addLabels(pr.number, getInput('labels-premajor'));
-      if (getInput('auto-label') || getInput('auto-label-premajor'))
-        await addLabels(pr.number, 'premajor');
-      if (getInput('merge') || getInput('merge-premajor'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-premajor'))
-        autoApprove(pr.number);
-    } else if (version === 'minor') {
-      await addLabels(pr.number, getInput('labels-minor'));
-      if (getInput('auto-label') || getInput('auto-label-minor'))
-        await addLabels(pr.number, 'minor');
-      if (getInput('merge') || getInput('merge-minor'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-minor'))
-        autoApprove(pr.number);
-    } else if (version === 'preminor') {
-      await addLabels(pr.number, getInput('labels-preminor'));
-      if (getInput('auto-label') || getInput('auto-label-preminor'))
-        await addLabels(pr.number, 'preminor');
-      if (getInput('merge') || getInput('merge-preminor'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-preminor'))
-        autoApprove(pr.number);
-    } else if (version === 'patch') {
-      await addLabels(pr.number, getInput('labels-patch'));
-      if (getInput('auto-label') || getInput('auto-label-patch'))
-        await addLabels(pr.number, 'patch');
-      if (getInput('merge') || getInput('merge-patch'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-patch'))
-        autoApprove(pr.number);
-    } else if (version === 'prepatch') {
-      await addLabels(pr.number, getInput('labels-prepatch'));
-      if (getInput('auto-label') || getInput('auto-label-prepatch'))
-        await addLabels(pr.number, 'prepatch');
-      if (getInput('merge') || getInput('merge-prepatch'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-prepatch'))
-        autoApprove(pr.number);
-    } else if (version === 'prerelease') {
-      await addLabels(pr.number, getInput('labels-prerelease'));
-      if (getInput('auto-label') || getInput('auto-label-prerelease'))
-        await addLabels(pr.number, 'prerelease');
-      if (getInput('merge') || getInput('merge-prerelease'))
-        autoMerge(pr.number, pr.title);
-      if (getInput('approve') || getInput('approve-prerelease'))
-        autoApprove(pr.number);
+
+      return {
+        number: pr.number,
+        title: pr.title,
+        checkRuns: checkRuns.data.check_runs,
+        uniqueStatuses,
+        first: valid(first),
+        last: valid(last),
+        version,
+      };
+    })
+  );
+}
+
+export async function run() {
+  const dependabotPRs = await getDependabotPRs();
+  console.table(dependabotPRs);
+
+  for (const pr of dependabotPRs) {
+    console.log('\nStarting PR', pr.number, '-', pr.title);
+
+    if (!ignoreStatusChecks) {
+      // Skip if not all check are successful
+      const allChecksHaveSucceeded = pr.checkRuns.every(
+        ({ conclusion }) => conclusion === 'success' || conclusion === 'skipped'
+      );
+      // Skip if status are not ok
+      const areAllStatusOk = pr.uniqueStatuses.every(
+        ({ state }) => state === 'success'
+      );
+      if (!allChecksHaveSucceeded && !areAllStatusOk) {
+        console.log('Not all status check have succeded');
+        continue;
+      }
+    }
+
+    console.log(`Diff version is (${pr.first} -> ${pr.last}) ${pr.version}`);
+
+    if (!pr.version) {
+      console.log('Invalid version bump');
+      continue;
+    }
+
+    const labels = getInput(`labels-${pr.version}`);
+    if (labels) {
+      await addLabels(pr.number, labels);
+      console.log('Labeled');
+    }
+
+    // Autolabel - TODO Deprecated
+    if (getInput('auto-label') || getInput(`auto-label-${pr.version}`)) {
+      await addLabels(pr.number, pr.version);
+      console.log('Auto labeled');
+    }
+
+    // Auto approve
+    if (
+      approveAllowLeap &&
+      shouldProcess(approveAllowLeap, pr.version, approvePrerelease)
+    ) {
+      doApprove(pr.number);
+      console.log('Approved');
+    }
+
+    // Auto merge
+    if (
+      mergeAllowLeap &&
+      shouldProcess(mergeAllowLeap, pr.version, mergePrerelease)
+    ) {
+      doMerge(pr.number, pr.title);
+      console.log('Merged');
     }
   }
 
-  console.log('All done!');
-};
+  console.log('\nAll done!');
+}
 
 run()
   .then(() => {})
